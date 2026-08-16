@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime
 import os
 import asyncio
@@ -11,7 +12,6 @@ import asyncio
 # =========================================================
 
 OWNER_ID = 1531438534244700313
-DB_NAME = "store.db"
 PREFIX = "!"
 
 
@@ -292,31 +292,44 @@ USERNAME_STOCK = {
 
 
 # =========================================================
-# 🗄️ قاعدة البيانات
+# 🗄️ PostgreSQL — Railway
 # =========================================================
 
-db = sqlite3.connect(
-    DB_NAME,
-    check_same_thread=False
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "❌ لم يتم العثور على DATABASE_URL في Railway Variables."
+    )
+
+
+db = psycopg2.connect(DATABASE_URL)
+
+db.autocommit = False
+
+cursor = db.cursor(
+    cursor_factory=RealDictCursor
 )
 
-db.row_factory = sqlite3.Row
-cursor = db.cursor()
+
+# =========================================================
+# 🧱 إنشاء الجداول
+# =========================================================
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    credits INTEGER NOT NULL DEFAULT 0
+    user_id BIGINT PRIMARY KEY,
+    credits BIGINT NOT NULL DEFAULT 0
 )
 """)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
     product_id TEXT NOT NULL,
     product_name TEXT NOT NULL,
-    price INTEGER NOT NULL,
+    price BIGINT NOT NULL,
     delivered_product TEXT,
     created_at TEXT NOT NULL
 )
@@ -324,9 +337,9 @@ CREATE TABLE IF NOT EXISTS orders (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    amount BIGINT NOT NULL,
     transaction_type TEXT NOT NULL,
     description TEXT NOT NULL,
     created_at TEXT NOT NULL
@@ -335,7 +348,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS username_stock (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     product_id TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE,
     sold INTEGER NOT NULL DEFAULT 0
@@ -346,7 +359,7 @@ db.commit()
 
 
 # =========================================================
-# 📥 تحميل المخزون إلى قاعدة البيانات
+# 📥 تحميل المخزون إلى PostgreSQL
 # =========================================================
 
 def initialize_username_stock():
@@ -357,13 +370,14 @@ def initialize_username_stock():
 
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO username_stock
+                INSERT INTO username_stock
                 (
                     product_id,
                     username,
                     sold
                 )
-                VALUES (?, ?, 0)
+                VALUES (%s, %s, 0)
+                ON CONFLICT (username) DO NOTHING
                 """,
                 (
                     product_id,
@@ -391,7 +405,11 @@ purchase_lock = asyncio.Lock()
 def ensure_user(user_id):
 
     cursor.execute(
-        "SELECT user_id FROM users WHERE user_id = ?",
+        """
+        SELECT user_id
+        FROM users
+        WHERE user_id = %s
+        """,
         (user_id,)
     )
 
@@ -404,7 +422,8 @@ def ensure_user(user_id):
                 user_id,
                 credits
             )
-            VALUES (?, 0)
+            VALUES (%s, 0)
+            ON CONFLICT (user_id) DO NOTHING
             """,
             (user_id,)
         )
@@ -420,7 +439,7 @@ def get_credits(user_id):
         """
         SELECT credits
         FROM users
-        WHERE user_id = ?
+        WHERE user_id = %s
         """,
         (user_id,)
     )
@@ -444,8 +463,8 @@ def add_credits(
     cursor.execute(
         """
         UPDATE users
-        SET credits = credits + ?
-        WHERE user_id = ?
+        SET credits = credits + %s
+        WHERE user_id = %s
         """,
         (
             amount,
@@ -463,7 +482,7 @@ def add_credits(
             description,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         """,
         (
             user_id,
@@ -493,9 +512,9 @@ def remove_credits(
     cursor.execute(
         """
         UPDATE users
-        SET credits = credits - ?
-        WHERE user_id = ?
-        AND credits >= ?
+        SET credits = credits - %s
+        WHERE user_id = %s
+        AND credits >= %s
         """,
         (
             amount,
@@ -517,7 +536,7 @@ def remove_credits(
             description,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         """,
         (
             user_id,
@@ -541,10 +560,8 @@ def generate_username_variants(username):
 
     variants = set()
 
-    # نضع الاسم الأصلي أولًا
     variants.add(username)
 
-    # إضافة . أو _ بين الحروف
     for i in range(1, len(username)):
 
         variants.add(
@@ -555,7 +572,6 @@ def generate_username_variants(username):
             username[:i] + "_" + username[i:]
         )
 
-    # بعض التركيبات البسيطة التي تحتوي أكثر من فاصل
     if len(username) >= 3:
 
         for i in range(1, len(username)):
@@ -605,7 +621,7 @@ def reserve_username(product_id):
         """
         SELECT id, username
         FROM username_stock
-        WHERE product_id = ?
+        WHERE product_id = %s
         AND sold = 0
         ORDER BY id ASC
         LIMIT 1
@@ -622,7 +638,7 @@ def reserve_username(product_id):
         """
         UPDATE username_stock
         SET sold = 1
-        WHERE id = ?
+        WHERE id = %s
         AND sold = 0
         """,
         (row["id"],)
@@ -646,7 +662,7 @@ def get_stock_count(product_id):
         """
         SELECT COUNT(*) AS count
         FROM username_stock
-        WHERE product_id = ?
+        WHERE product_id = %s
         AND sold = 0
         """,
         (product_id,)
@@ -715,7 +731,6 @@ class MainMenuView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
-
     @discord.ui.button(
         label="شراء يوزرات",
         emoji="👤",
@@ -738,7 +753,6 @@ class MainMenuView(discord.ui.View):
             view=ProductsView("يوزرات")
         )
 
-
     @discord.ui.button(
         label="شراء أدوات",
         emoji="🛠️",
@@ -760,7 +774,6 @@ class MainMenuView(discord.ui.View):
             embed=embed,
             view=ProductsView("أدوات")
         )
-
 
     @discord.ui.button(
         label="رصيدي",
@@ -791,7 +804,6 @@ class MainMenuView(discord.ui.View):
             embed=embed,
             ephemeral=True
         )
-
 
     @discord.ui.button(
         label="طلب آخر",
@@ -827,7 +839,6 @@ class OtherRequestView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=300)
-
 
     @discord.ui.button(
         label="رجوع",
@@ -869,7 +880,6 @@ class ProductsView(discord.ui.View):
                 f"{product['price']:,}"
             )
 
-            # إظهار المخزون لليوزرات
             if product_id in USERNAME_PRODUCTS:
 
                 stock_count = get_stock_count(
@@ -903,7 +913,6 @@ class ProductsView(discord.ui.View):
 
                     return
 
-                # التحقق من المخزون
                 if pid in USERNAME_PRODUCTS:
 
                     if get_stock_count(pid) <= 0:
@@ -1006,7 +1015,6 @@ class ConfirmView(discord.ui.View):
         self.product_id = product_id
         self.buyer_id = buyer_id
 
-
     async def interaction_check(
         self,
         interaction: discord.Interaction
@@ -1022,7 +1030,6 @@ class ConfirmView(discord.ui.View):
             return False
 
         return True
-
 
     @discord.ui.button(
         label="تأكيد الشراء",
@@ -1100,7 +1107,6 @@ class ConfirmView(discord.ui.View):
 
                     return
 
-                # محاولة إرسال الخاص قبل الخصم
                 try:
 
                     dm = await interaction.user.create_dm()
@@ -1109,7 +1115,6 @@ class ConfirmView(discord.ui.View):
                         username
                     )
 
-                    # نعرض عددًا مناسبًا من الاحتمالات
                     variants = variants[:100]
 
                     variant_text = "\n".join(
@@ -1139,13 +1144,12 @@ class ConfirmView(discord.ui.View):
 
                 except discord.Forbidden:
 
-                    # إعادة اليوزر للمخزون
                     cursor.execute(
                         """
                         UPDATE username_stock
                         SET sold = 0
-                        WHERE product_id = ?
-                        AND username = ?
+                        WHERE product_id = %s
+                        AND username = %s
                         """,
                         (
                             self.product_id,
@@ -1170,7 +1174,6 @@ class ConfirmView(discord.ui.View):
 
                     return
 
-                # خصم الكريدت
                 success = remove_credits(
                     interaction.user.id,
                     price,
@@ -1183,8 +1186,8 @@ class ConfirmView(discord.ui.View):
                         """
                         UPDATE username_stock
                         SET sold = 0
-                        WHERE product_id = ?
-                        AND username = ?
+                        WHERE product_id = %s
+                        AND username = %s
                         """,
                         (
                             self.product_id,
@@ -1202,7 +1205,6 @@ class ConfirmView(discord.ui.View):
 
                     return
 
-                # تسجيل الطلب
                 cursor.execute(
                     """
                     INSERT INTO orders
@@ -1214,7 +1216,7 @@ class ConfirmView(discord.ui.View):
                         delivered_product,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     (
                         interaction.user.id,
@@ -1247,7 +1249,6 @@ class ConfirmView(discord.ui.View):
                     view=None
                 )
 
-                # إشعار المالك
                 try:
 
                     owner = await bot.fetch_user(
@@ -1322,7 +1323,7 @@ class ConfirmView(discord.ui.View):
                     delivered_product,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
                     interaction.user.id,
@@ -1340,7 +1341,6 @@ class ConfirmView(discord.ui.View):
                 interaction.user.id
             )
 
-            # رسالة التسليم اليدوي في الخاص
             try:
 
                 dm = await interaction.user.create_dm()
@@ -1361,8 +1361,6 @@ class ConfirmView(discord.ui.View):
 
             except discord.Forbidden:
 
-                # في حالة فشل الخاص، لا نستطيع عكس الخصم
-                # تلقائيًا هنا بشكل آمن بدون نظام معاملات إضافي.
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="⚠️ تم تسجيل الطلب",
@@ -1394,7 +1392,6 @@ class ConfirmView(discord.ui.View):
                 view=None
             )
 
-            # إشعار المالك
             try:
 
                 owner = await bot.fetch_user(
@@ -1411,7 +1408,6 @@ class ConfirmView(discord.ui.View):
 
             except discord.HTTPException:
                 pass
-
 
     @discord.ui.button(
         label="إلغاء",
@@ -1697,7 +1693,7 @@ async def on_ready():
     print("💳 نظام الكريدت جاهز")
     print("👤 مخزون اليوزرات جاهز")
     print("🛠️ نظام تسليم الأدوات اليدوي جاهز")
-    print("🗄️ قاعدة البيانات جاهزة")
+    print("🗄️ PostgreSQL جاهزة")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     await bot.change_presence(
