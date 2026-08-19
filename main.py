@@ -295,11 +295,41 @@ USERNAME_STOCK = {
 # 🗄️ PostgreSQL — Railway
 # =========================================================
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# التعديل الوحيد هنا:
+# يحاول DATABASE_URL أولًا، ثم DATABASE_PRIVATE_URL،
+# ثم DATABASE_PUBLIC_URL، ثم يبني الرابط من متغيرات PostgreSQL.
+
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("DATABASE_PRIVATE_URL")
+    or os.getenv("DATABASE_PUBLIC_URL")
+)
+
+if not DATABASE_URL:
+
+    pg_host = os.getenv("PGHOST")
+    pg_port = os.getenv("PGPORT", "5432")
+    pg_database = os.getenv("PGDATABASE")
+    pg_user = os.getenv("PGUSER")
+    pg_password = os.getenv("PGPASSWORD")
+
+    if all([
+        pg_host,
+        pg_port,
+        pg_database,
+        pg_user,
+        pg_password
+    ]):
+
+        DATABASE_URL = (
+            f"postgresql://{pg_user}:{pg_password}"
+            f"@{pg_host}:{pg_port}/{pg_database}"
+        )
+
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "❌ لم يتم العثور على DATABASE_URL في Railway Variables."
+        "❌ لم يتم العثور على DATABASE_URL أو بيانات PostgreSQL في Railway Variables."
     )
 
 
