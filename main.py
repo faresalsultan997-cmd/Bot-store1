@@ -36,6 +36,10 @@ bot = commands.Bot(
 
 PRODUCTS = {
 
+    # =====================================================
+    # 👤 اليوزرات
+    # =====================================================
+
     "username_5": {
         "name": "يوزر خماسي",
         "price": 100_000,
@@ -60,6 +64,10 @@ PRODUCTS = {
         "category": "يوزرات"
     },
 
+    # =====================================================
+    # 🛠️ الأدوات
+    # =====================================================
+
     "snowfox": {
         "name": "🦊 أداة Snow Fox",
         "price": 3_000_000,
@@ -76,6 +84,74 @@ PRODUCTS = {
         "name": "📋 أداة نسخ سيرفرات",
         "price": 3_000_000,
         "category": "أدوات"
+    },
+
+    # =====================================================
+    # 🤖 شراء بوتات
+    # =====================================================
+
+    "buy_ticket_bot": {
+        "name": "🎫 بوت تذاكر",
+        "price": 1_500_000,
+        "category": "شراء_بوتات"
+    },
+
+    "buy_chat_bot": {
+        "name": "💬 بوت دردشة",
+        "price": 1_200_000,
+        "category": "شراء_بوتات"
+    },
+
+    "buy_rooms_bot": {
+        "name": "🏠 بوت رومات",
+        "price": 1_400_000,
+        "category": "شراء_بوتات"
+    },
+
+    "buy_system_bot": {
+        "name": "⚙️ بوت سيستم",
+        "price": 3_000_000,
+        "category": "شراء_بوتات"
+    },
+
+    "buy_store_bot": {
+        "name": "🛒 بوت متجر",
+        "price": 2_500_000,
+        "category": "شراء_بوتات"
+    },
+
+    # =====================================================
+    # 🛠️ صناعة بوتات
+    # =====================================================
+
+    "make_ticket_bot": {
+        "name": "🎫 صناعة بوت تذاكر",
+        "price": 3_000_000,
+        "category": "صناعة_بوتات"
+    },
+
+    "make_chat_bot": {
+        "name": "💬 صناعة بوت دردشة",
+        "price": 2_700_000,
+        "category": "صناعة_بوتات"
+    },
+
+    "make_rooms_bot": {
+        "name": "🏠 صناعة بوت رومات",
+        "price": 2_900_000,
+        "category": "صناعة_بوتات"
+    },
+
+    "make_system_bot": {
+        "name": "⚙️ صناعة بوت سيستم",
+        "price": 6_000_000,
+        "category": "صناعة_بوتات"
+    },
+
+    "make_store_bot": {
+        "name": "🛒 صناعة بوت متجر",
+        "price": 5_500_000,
+        "category": "صناعة_بوتات"
     }
 }
 
@@ -85,6 +161,25 @@ USERNAME_PRODUCTS = {
     "username_4",
     "username_3",
     "username_2"
+}
+
+
+# =========================================================
+# 🤖 منتجات البوتات
+# =========================================================
+
+BOT_PRODUCTS = {
+    "buy_ticket_bot",
+    "buy_chat_bot",
+    "buy_rooms_bot",
+    "buy_system_bot",
+    "buy_store_bot",
+
+    "make_ticket_bot",
+    "make_chat_bot",
+    "make_rooms_bot",
+    "make_system_bot",
+    "make_store_bot"
 }
 
 
@@ -294,10 +389,6 @@ USERNAME_STOCK = {
 # =========================================================
 # 🗄️ PostgreSQL — Railway
 # =========================================================
-
-# التعديل الوحيد هنا:
-# يحاول DATABASE_URL أولًا، ثم DATABASE_PRIVATE_URL،
-# ثم DATABASE_PUBLIC_URL، ثم يبني الرابط من متغيرات PostgreSQL.
 
 DATABASE_URL = (
     os.getenv("DATABASE_URL")
@@ -554,6 +645,9 @@ def remove_credits(
     )
 
     if cursor.rowcount == 0:
+
+        db.rollback()
+
         return False
 
     cursor.execute(
@@ -592,6 +686,7 @@ def generate_username_variants(username):
 
     variants.add(username)
 
+    # نقطة أو _
     for i in range(1, len(username)):
 
         variants.add(
@@ -602,6 +697,7 @@ def generate_username_variants(username):
             username[:i] + "_" + username[i:]
         )
 
+    # أكثر من نقطة أو _
     if len(username) >= 3:
 
         for i in range(1, len(username)):
@@ -675,6 +771,7 @@ def reserve_username(product_id):
     )
 
     if cursor.rowcount == 0:
+        db.rollback()
         return None
 
     db.commit()
@@ -701,6 +798,125 @@ def get_stock_count(product_id):
     result = cursor.fetchone()
 
     return result["count"]
+
+
+# =========================================================
+# 🔄 إعادة يوزر للمخزون
+# =========================================================
+
+def return_username(product_id, username):
+
+    cursor.execute(
+        """
+        UPDATE username_stock
+        SET sold = 0
+        WHERE product_id = %s
+        AND username = %s
+        """,
+        (
+            product_id,
+            username
+        )
+    )
+
+    db.commit()
+
+
+# =========================================================
+# 📸 انتظار دليل الشراء
+# =========================================================
+
+async def request_purchase_proof(
+    interaction,
+    product
+):
+
+    channel = interaction.channel
+    buyer_id = interaction.user.id
+
+    embed = discord.Embed(
+        title="📸 أرسل دليل الشراء",
+        description=(
+            f"تم خصم **{product['price']:,} كريدت** بنجاح.\n\n"
+            f"📦 الطلب: **{product['name']}**\n\n"
+            "الآن أرسل **صورة دليل الشراء** في هذه الروم.\n"
+            "بعد إرسال الصورة سيتم إرسالها لصاحب المتجر."
+        ),
+        color=0xF1C40F
+    )
+
+    await channel.send(
+        content=interaction.user.mention,
+        embed=embed
+    )
+
+    def check(message):
+
+        return (
+            message.author.id == buyer_id
+            and message.channel.id == channel.id
+            and len(message.attachments) > 0
+        )
+
+    try:
+
+        message = await bot.wait_for(
+            "message",
+            timeout=300,
+            check=check
+        )
+
+    except asyncio.TimeoutError:
+
+        await channel.send(
+            f"⏰ {interaction.user.mention} انتهى وقت انتظار دليل الشراء.\n"
+            f"تواصل مع <@{OWNER_ID}>."
+        )
+
+        return False
+
+    attachment = message.attachments[0]
+
+    try:
+
+        owner = await bot.fetch_user(
+            OWNER_ID
+        )
+
+        proof_embed = discord.Embed(
+            title="📸 دليل شراء جديد",
+            description=(
+                f"👤 العميل: {interaction.user.mention}\n"
+                f"🆔 ID: `{interaction.user.id}`\n"
+                f"📦 المنتج: **{product['name']}**\n"
+                f"💰 السعر: `{product['price']:,}` كريدت\n"
+                f"🕐 الوقت: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
+            ),
+            color=0x2ECC71
+        )
+
+        proof_embed.set_image(
+            url=attachment.url
+        )
+
+        await owner.send(
+            embed=proof_embed
+        )
+
+        await channel.send(
+            f"✅ {interaction.user.mention} تم إرسال دليل الشراء إلى "
+            f"<@{OWNER_ID}> بنجاح."
+        )
+
+        return True
+
+    except discord.HTTPException:
+
+        await channel.send(
+            f"❌ تعذر إرسال دليل الشراء إلى <@{OWNER_ID}>."
+        )
+
+        return False
 
 
 # =========================================================
@@ -734,6 +950,14 @@ def main_embed():
     )
 
     embed.add_field(
+        name="🤖 البوتات",
+        value=(
+            "شراء بوتات • صناعة بوتات"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
         name="💳 رصيدك",
         value="استخدم `!رصيدي` لمعرفة رصيدك.",
         inline=False
@@ -759,7 +983,10 @@ def main_embed():
 class MainMenuView(discord.ui.View):
 
     def __init__(self):
-        super().__init__(timeout=300)
+
+        super().__init__(
+            timeout=300
+        )
 
     @discord.ui.button(
         label="شراء يوزرات",
@@ -768,8 +995,8 @@ class MainMenuView(discord.ui.View):
     )
     async def usernames(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         embed = discord.Embed(
@@ -783,6 +1010,7 @@ class MainMenuView(discord.ui.View):
             view=ProductsView("يوزرات")
         )
 
+
     @discord.ui.button(
         label="شراء أدوات",
         emoji="🛠️",
@@ -790,8 +1018,8 @@ class MainMenuView(discord.ui.View):
     )
     async def tools(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         embed = discord.Embed(
@@ -805,16 +1033,45 @@ class MainMenuView(discord.ui.View):
             view=ProductsView("أدوات")
         )
 
+
+    @discord.ui.button(
+        label="البوتات",
+        emoji="🤖",
+        style=discord.ButtonStyle.primary,
+        row=1
+    )
+    async def bots(
+        self,
+        interaction,
+        button
+    ):
+
+        embed = discord.Embed(
+            title="🤖 قسم البوتات",
+            description=(
+                "اختر الخدمة التي تريدها:\n\n"
+                "🛒 شراء بوت جاهز\n"
+                "🛠️ صناعة بوت خاص"
+            ),
+            color=0x5865F2
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=BotsCategoryView()
+        )
+
+
     @discord.ui.button(
         label="رصيدي",
         emoji="💳",
         style=discord.ButtonStyle.secondary,
-        row=1
+        row=2
     )
     async def balance_button(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         credits = get_credits(
@@ -835,16 +1092,17 @@ class MainMenuView(discord.ui.View):
             ephemeral=True
         )
 
+
     @discord.ui.button(
         label="طلب آخر",
         emoji="📝",
         style=discord.ButtonStyle.secondary,
-        row=1
+        row=2
     )
     async def other(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         embed = discord.Embed(
@@ -868,7 +1126,10 @@ class MainMenuView(discord.ui.View):
 class OtherRequestView(discord.ui.View):
 
     def __init__(self):
-        super().__init__(timeout=300)
+
+        super().__init__(
+            timeout=300
+        )
 
     @discord.ui.button(
         label="رجوع",
@@ -877,8 +1138,8 @@ class OtherRequestView(discord.ui.View):
     )
     async def back(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         await interaction.response.edit_message(
@@ -888,14 +1149,307 @@ class OtherRequestView(discord.ui.View):
 
 
 # =========================================================
-# 📦 قائمة المنتجات
+# 🤖 قائمة البوتات
+# =========================================================
+
+class BotsCategoryView(discord.ui.View):
+
+    def __init__(self):
+
+        super().__init__(
+            timeout=300
+        )
+
+
+    @discord.ui.button(
+        label="شراء بوت",
+        emoji="🛒",
+        style=discord.ButtonStyle.success
+    )
+    async def buy(
+        self,
+        interaction,
+        button
+    ):
+
+        embed = discord.Embed(
+            title="🛒 شراء بوتات",
+            description="اختر البوت الذي تريد شراءه:",
+            color=0x2ECC71
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=BotProductsView("شراء_بوتات")
+        )
+
+
+    @discord.ui.button(
+        label="صناعة بوت",
+        emoji="🛠️",
+        style=discord.ButtonStyle.primary
+    )
+    async def make(
+        self,
+        interaction,
+        button
+    ):
+
+        embed = discord.Embed(
+            title="🛠️ صناعة بوتات",
+            description="اختر نوع البوت الذي تريد صناعته:",
+            color=0x9B59B6
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=BotProductsView("صناعة_بوتات")
+        )
+
+
+    @discord.ui.button(
+        label="رجوع",
+        emoji="⬅️",
+        style=discord.ButtonStyle.secondary,
+        row=2
+    )
+    async def back(
+        self,
+        interaction,
+        button
+    ):
+
+        await interaction.response.edit_message(
+            embed=main_embed(),
+            view=MainMenuView()
+        )
+
+
+    @discord.ui.button(
+        label="🤖 بوت آخر",
+        style=discord.ButtonStyle.secondary,
+        row=2
+    )
+    async def other_bot(
+        self,
+        interaction,
+        button
+    ):
+
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="🤖 بوت آخر",
+                description=(
+                    f"للطلبات الخاصة أو البوتات الأخرى، "
+                    f"تواصل مع <@{OWNER_ID}>."
+                ),
+                color=0xF1C40F
+            ),
+            view=OtherBotView()
+        )
+
+
+# =========================================================
+# 🤖 منتجات البوتات
+# =========================================================
+
+class BotProductsView(discord.ui.View):
+
+    def __init__(self, category):
+
+        super().__init__(
+            timeout=300
+        )
+
+        products = [
+            (product_id, product)
+            for product_id, product in PRODUCTS.items()
+            if product["category"] == category
+        ]
+
+        for product_id, product in products:
+
+            button = discord.ui.Button(
+                label=(
+                    f"{product['name']} • "
+                    f"{product['price']:,}"
+                )[:80],
+                style=discord.ButtonStyle.primary
+            )
+
+            async def callback(
+                interaction,
+                pid=product_id
+            ):
+
+                product_data = PRODUCTS.get(pid)
+
+                if product_data is None:
+
+                    await interaction.response.send_message(
+                        "❌ المنتج غير موجود.",
+                        ephemeral=True
+                    )
+
+                    return
+
+                balance = get_credits(
+                    interaction.user.id
+                )
+
+                if balance >= product_data["price"]:
+                    status = "✅ الرصيد كافٍ"
+                else:
+                    status = "❌ الرصيد غير كافٍ"
+
+                embed = discord.Embed(
+                    title="🛒 تأكيد الطلب",
+                    description=(
+                        "راجع بيانات الطلب قبل التأكيد:"
+                    ),
+                    color=0x3498DB
+                )
+
+                embed.add_field(
+                    name="📦 المنتج",
+                    value=product_data["name"],
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="💰 السعر",
+                    value=(
+                        f"`{product_data['price']:,}` كريدت"
+                    ),
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="💳 رصيدك",
+                    value=f"`{balance:,}` كريدت",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="📊 الحالة",
+                    value=status,
+                    inline=False
+                )
+
+                await interaction.response.edit_message(
+                    embed=embed,
+                    view=ConfirmView(
+                        pid,
+                        interaction.user.id
+                    )
+                )
+
+            button.callback = callback
+
+            self.add_item(button)
+
+
+        back = discord.ui.Button(
+            label="رجوع",
+            emoji="⬅️",
+            style=discord.ButtonStyle.secondary,
+            row=4
+        )
+
+        async def back_callback(interaction):
+
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="🤖 قسم البوتات",
+                    description=(
+                        "اختر الخدمة التي تريدها:\n\n"
+                        "🛒 شراء بوت جاهز\n"
+                        "🛠️ صناعة بوت خاص"
+                    ),
+                    color=0x5865F2
+                ),
+                view=BotsCategoryView()
+            )
+
+        back.callback = back_callback
+
+        self.add_item(back)
+
+
+        other = discord.ui.Button(
+            label="بوت آخر",
+            emoji="🤖",
+            style=discord.ButtonStyle.secondary,
+            row=4
+        )
+
+        async def other_callback(interaction):
+
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="🤖 بوت آخر",
+                    description=(
+                        f"للطلبات الأخرى، تواصل مع "
+                        f"<@{OWNER_ID}>."
+                    ),
+                    color=0xF1C40F
+                ),
+                view=OtherBotView()
+            )
+
+        other.callback = other_callback
+
+        self.add_item(other)
+
+
+# =========================================================
+# 🤖 بوت آخر
+# =========================================================
+
+class OtherBotView(discord.ui.View):
+
+    def __init__(self):
+
+        super().__init__(
+            timeout=300
+        )
+
+    @discord.ui.button(
+        label="رجوع",
+        emoji="⬅️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def back(
+        self,
+        interaction,
+        button
+    ):
+
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="🤖 قسم البوتات",
+                description=(
+                    "اختر الخدمة التي تريدها:\n\n"
+                    "🛒 شراء بوت جاهز\n"
+                    "🛠️ صناعة بوت خاص"
+                ),
+                color=0x5865F2
+            ),
+            view=BotsCategoryView()
+        )
+
+
+# =========================================================
+# 📦 قائمة المنتجات العادية
 # =========================================================
 
 class ProductsView(discord.ui.View):
 
     def __init__(self, category):
 
-        super().__init__(timeout=300)
+        super().__init__(
+            timeout=300
+        )
 
         products = [
             (product_id, product)
@@ -928,7 +1482,7 @@ class ProductsView(discord.ui.View):
             )
 
             async def callback(
-                interaction: discord.Interaction,
+                interaction,
                 pid=product_id
             ):
 
@@ -1007,6 +1561,7 @@ class ProductsView(discord.ui.View):
 
             self.add_item(button)
 
+
         back = discord.ui.Button(
             label="رجوع",
             emoji="⬅️",
@@ -1014,9 +1569,7 @@ class ProductsView(discord.ui.View):
             row=4
         )
 
-        async def back_callback(
-            interaction: discord.Interaction
-        ):
+        async def back_callback(interaction):
 
             await interaction.response.edit_message(
                 embed=main_embed(),
@@ -1040,14 +1593,17 @@ class ConfirmView(discord.ui.View):
         buyer_id
     ):
 
-        super().__init__(timeout=60)
+        super().__init__(
+            timeout=60
+        )
 
         self.product_id = product_id
         self.buyer_id = buyer_id
 
+
     async def interaction_check(
         self,
-        interaction: discord.Interaction
+        interaction
     ):
 
         if interaction.user.id != self.buyer_id:
@@ -1061,6 +1617,7 @@ class ConfirmView(discord.ui.View):
 
         return True
 
+
     @discord.ui.button(
         label="تأكيد الشراء",
         emoji="✅",
@@ -1068,8 +1625,8 @@ class ConfirmView(discord.ui.View):
     )
     async def confirm(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         product = PRODUCTS.get(
@@ -1087,6 +1644,7 @@ class ConfirmView(discord.ui.View):
             return
 
         price = product["price"]
+
 
         # =================================================
         # 👤 شراء يوزر
@@ -1117,6 +1675,7 @@ class ConfirmView(discord.ui.View):
 
                     return
 
+
                 username = reserve_username(
                     self.product_id
                 )
@@ -1136,6 +1695,7 @@ class ConfirmView(discord.ui.View):
                     )
 
                     return
+
 
                 try:
 
@@ -1174,20 +1734,10 @@ class ConfirmView(discord.ui.View):
 
                 except discord.Forbidden:
 
-                    cursor.execute(
-                        """
-                        UPDATE username_stock
-                        SET sold = 0
-                        WHERE product_id = %s
-                        AND username = %s
-                        """,
-                        (
-                            self.product_id,
-                            username
-                        )
+                    return_username(
+                        self.product_id,
+                        username
                     )
-
-                    db.commit()
 
                     await interaction.response.edit_message(
                         embed=discord.Embed(
@@ -1204,6 +1754,7 @@ class ConfirmView(discord.ui.View):
 
                     return
 
+
                 success = remove_credits(
                     interaction.user.id,
                     price,
@@ -1212,20 +1763,10 @@ class ConfirmView(discord.ui.View):
 
                 if not success:
 
-                    cursor.execute(
-                        """
-                        UPDATE username_stock
-                        SET sold = 0
-                        WHERE product_id = %s
-                        AND username = %s
-                        """,
-                        (
-                            self.product_id,
-                            username
-                        )
+                    return_username(
+                        self.product_id,
+                        username
                     )
-
-                    db.commit()
 
                     await interaction.response.edit_message(
                         content="❌ تعذر إتمام عملية الخصم.",
@@ -1234,6 +1775,7 @@ class ConfirmView(discord.ui.View):
                     )
 
                     return
+
 
                 cursor.execute(
                     """
@@ -1260,9 +1802,11 @@ class ConfirmView(discord.ui.View):
 
                 db.commit()
 
+
                 new_balance = get_credits(
                     interaction.user.id
                 )
+
 
                 await interaction.response.edit_message(
                     embed=discord.Embed(
@@ -1278,6 +1822,7 @@ class ConfirmView(discord.ui.View):
                     ),
                     view=None
                 )
+
 
                 try:
 
@@ -1298,6 +1843,112 @@ class ConfirmView(discord.ui.View):
                     pass
 
             return
+
+
+        # =================================================
+        # 🤖 شراء أو صناعة بوت
+        # =================================================
+
+        if self.product_id in BOT_PRODUCTS:
+
+            async with purchase_lock:
+
+                balance = get_credits(
+                    interaction.user.id
+                )
+
+                if balance < price:
+
+                    await interaction.response.edit_message(
+                        embed=discord.Embed(
+                            title="❌ الرصيد غير كافٍ",
+                            description=(
+                                f"📦 المنتج: **{product['name']}**\n"
+                                f"💰 السعر: `{price:,}` كريدت\n"
+                                f"💳 رصيدك: `{balance:,}` كريدت\n\n"
+                                f"تحتاج: `{price - balance:,}` كريدت إضافية."
+                            ),
+                            color=0xE74C3C
+                        ),
+                        view=None
+                    )
+
+                    return
+
+
+                success = remove_credits(
+                    interaction.user.id,
+                    price,
+                    f"شراء {product['name']}"
+                )
+
+                if not success:
+
+                    await interaction.response.edit_message(
+                        content="❌ تعذر إتمام عملية الخصم.",
+                        embed=None,
+                        view=None
+                    )
+
+                    return
+
+
+                cursor.execute(
+                    """
+                    INSERT INTO orders
+                    (
+                        user_id,
+                        product_id,
+                        product_name,
+                        price,
+                        delivered_product,
+                        created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        interaction.user.id,
+                        self.product_id,
+                        product["name"],
+                        price,
+                        "بانتظار دليل الشراء",
+                        datetime.now().isoformat()
+                    )
+                )
+
+                db.commit()
+
+
+                new_balance = get_credits(
+                    interaction.user.id
+                )
+
+
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="✅ تم الدفع بنجاح",
+                        description=(
+                            f"📦 الطلب: **{product['name']}**\n"
+                            f"💰 السعر: `{price:,}` كريدت\n"
+                            f"💳 رصيدك الجديد: `{new_balance:,}` كريدت\n\n"
+                            "📸 أرسل الآن **صورة دليل الشراء** "
+                            "في هذه الروم.\n\n"
+                            f"سيتم إرسال الدليل إلى <@{OWNER_ID}>."
+                        ),
+                        color=0x2ECC71
+                    ),
+                    view=None
+                )
+
+
+            # انتظار الدليل خارج القفل
+            await request_purchase_proof(
+                interaction,
+                product
+            )
+
+            return
+
 
         # =================================================
         # 🛠️ شراء أداة
@@ -1326,6 +1977,7 @@ class ConfirmView(discord.ui.View):
 
                 return
 
+
             success = remove_credits(
                 interaction.user.id,
                 price,
@@ -1341,6 +1993,7 @@ class ConfirmView(discord.ui.View):
                 )
 
                 return
+
 
             cursor.execute(
                 """
@@ -1360,84 +2013,46 @@ class ConfirmView(discord.ui.View):
                     self.product_id,
                     product["name"],
                     price,
-                    "تسليم يدوي عبر المالك",
+                    "بانتظار دليل الشراء",
                     datetime.now().isoformat()
                 )
             )
 
             db.commit()
 
+
             new_balance = get_credits(
                 interaction.user.id
             )
 
-            try:
-
-                dm = await interaction.user.create_dm()
-
-                await dm.send(
-                    embed=discord.Embed(
-                        title="✅ تم الدفع بنجاح",
-                        description=(
-                            f"📦 المنتج: **{product['name']}**\n\n"
-                            "تم تسجيل طلبك بنجاح. 🎉\n\n"
-                            "📩 لاستلام الأداة، "
-                            "تواصل مع صاحب المتجر في الخاص:\n"
-                            f"<@{OWNER_ID}>"
-                        ),
-                        color=0x2ECC71
-                    )
-                )
-
-            except discord.Forbidden:
-
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="⚠️ تم تسجيل الطلب",
-                        description=(
-                            "تم تسجيل عملية الشراء، لكن تعذر إرسال "
-                            "رسالة الخاص.\n\n"
-                            f"تواصل مع <@{OWNER_ID}> لاستلام طلبك."
-                        ),
-                        color=0xF1C40F
-                    ),
-                    view=None
-                )
-
-                return
 
             await interaction.response.edit_message(
                 embed=discord.Embed(
-                    title="✅ تمت عملية الشراء",
+                    title="✅ تم الدفع بنجاح",
                     description=(
-                        "تم الدفع بنجاح! 🎉\n\n"
                         f"📦 المنتج: **{product['name']}**\n"
                         f"💰 السعر: `{price:,}` كريدت\n"
                         f"💳 رصيدك الجديد: `{new_balance:,}` كريدت\n\n"
-                        f"📩 راجع الخاص، ثم تواصل مع "
-                        f"<@{OWNER_ID}> لاستلام الأداة."
+                        "📸 أرسل الآن **صورة دليل الشراء** "
+                        "في هذه الروم.\n\n"
+                        f"سيتم إرسال الدليل إلى <@{OWNER_ID}>."
                     ),
                     color=0x2ECC71
                 ),
                 view=None
             )
 
-            try:
 
-                owner = await bot.fetch_user(
-                    OWNER_ID
-                )
+        # انتظار الدليل
+        await request_purchase_proof(
+            interaction,
+            product
+        )
 
-                await owner.send(
-                    "🛠️ **طلب أداة جديد**\n\n"
-                    f"👤 العميل: {interaction.user.mention}\n"
-                    f"🆔 ID: `{interaction.user.id}`\n"
-                    f"📦 الأداة: **{product['name']}**\n"
-                    f"💰 السعر: `{price:,}` كريدت"
-                )
 
-            except discord.HTTPException:
-                pass
+    # =====================================================
+    # ❌ إلغاء
+    # =====================================================
 
     @discord.ui.button(
         label="إلغاء",
@@ -1446,8 +2061,8 @@ class ConfirmView(discord.ui.View):
     )
     async def cancel(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
 
         embed = discord.Embed(
@@ -1722,6 +2337,8 @@ async def on_ready():
     print("🛒 المتجر جاهز")
     print("💳 نظام الكريدت جاهز")
     print("👤 مخزون اليوزرات جاهز")
+    print("🤖 نظام شراء وصناعة البوتات جاهز")
+    print("📸 نظام أدلة الشراء جاهز")
     print("🛠️ نظام تسليم الأدوات اليدوي جاهز")
     print("🗄️ PostgreSQL جاهزة")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1740,8 +2357,10 @@ async def on_ready():
 TOKEN = os.getenv("TOKEN")
 
 if not TOKEN:
+
     raise RuntimeError(
         "❌ لم يتم العثور على TOKEN في Railway Variables."
     )
+
 
 bot.run(TOKEN)
