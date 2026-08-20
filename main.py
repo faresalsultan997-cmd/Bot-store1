@@ -20,6 +20,24 @@ PREFIX = "!"
 
 PAYMENT_TIMEOUT = 15 * 60
 
+# ضريبة ProBot
+PROBOT_TAX_RATE = 0.05
+
+
+# =========================================================
+# 💰 حساب مبلغ التحويل مع الضريبة
+# =========================================================
+
+def calculate_transfer_amount(price):
+    """
+    يحسب المبلغ الذي يجب على العميل تحويله
+    حتى يستلم صاحب المتجر السعر الأساسي بعد خصم الضريبة.
+    """
+
+    return int(
+        (price / (1 - PROBOT_TAX_RATE)) + 0.999999
+    )
+
 
 # =========================================================
 # 🤖 إعداد البوت
@@ -603,11 +621,6 @@ def extract_probot_transfer(message):
 
     text = "\n".join(text_parts)
 
-    # مثال رسالة ProBot:
-    #
-    # 💰 | ed6., has transferred `$9`
-    # to <@!1531438534244700313>
-
     pattern = re.compile(
         r"(.+?)"
         r"\s*(?:has\s+transferred|transferred)"
@@ -666,7 +679,13 @@ async def wait_for_payment(
 
     channel_id = interaction.channel.id
 
-    amount = product["price"]
+    # السعر الأصلي
+    base_price = product["price"]
+
+    # السعر شامل الضريبة
+    amount = calculate_transfer_amount(
+        base_price
+    )
 
     payment_key = (
         f"{buyer_id}-"
@@ -676,6 +695,7 @@ async def wait_for_payment(
     pending_payments[payment_key] = {
         "user_id": buyer_id,
         "amount": amount,
+        "base_price": base_price,
         "product_id": None,
         "channel_id": channel_id,
         "started_at": datetime.now()
@@ -689,16 +709,29 @@ async def wait_for_payment(
         f"C @{OWNER_ID} {amount}"
     )
 
+    tax_amount = amount - base_price
+
     await interaction.channel.send(
         content=buyer.mention,
         embed=discord.Embed(
             title="💳 بانتظار التحويل",
             description=(
                 f"📦 المنتج: **{product['name']}**\n\n"
-                f"💰 السعر: `{amount:,}` كريدت\n\n"
+
+                f"💰 السعر الأساسي: "
+                f"`{base_price:,}` كريدت\n"
+
+                f"🧾 ضريبة ProBot (5%): "
+                f"`{tax_amount:,}` كريدت\n\n"
+
+                f"💳 **المبلغ المطلوب تحويله: "
+                f"`{amount:,}` كريدت**\n\n"
+
                 "📤 قم بالتحويل بالأمر:\n"
                 f"```{transfer_command}```\n\n"
+
                 "⏱️ لديك **15 دقيقة** لإتمام التحويل.\n\n"
+
                 "⚠️ سيتم التحقق من رسالة ProBot الحقيقية."
             ),
             color=0xF1C40F
@@ -736,7 +769,7 @@ async def wait_for_payment(
             return False
 
         # -------------------------------------------------
-        # المبلغ
+        # المبلغ شامل الضريبة
         # -------------------------------------------------
 
         if transfer["amount"] != amount:
@@ -750,14 +783,17 @@ async def wait_for_payment(
             transfer["sender_name"]
         )
 
-        # إزالة بعض العلامات الشائعة
-        sender_name = sender_name.rstrip(".,:")
+        sender_name = sender_name.rstrip(
+            ".,:"
+        )
 
         cleaned_variants = set()
 
         for name in name_variants:
 
-            cleaned = name.rstrip(".,:")
+            cleaned = name.rstrip(
+                ".,:"
+            )
 
             cleaned_variants.add(
                 cleaned
@@ -1390,6 +1426,15 @@ class BotProductsView(
 
                     return
 
+                price = product_data["price"]
+                transfer_amount = calculate_transfer_amount(
+                    price
+                )
+
+                tax_amount = (
+                    transfer_amount - price
+                )
+
                 embed = discord.Embed(
                     title="🛒 تأكيد الطلب",
                     description=(
@@ -1405,9 +1450,25 @@ class BotProductsView(
                 )
 
                 embed.add_field(
-                    name="💰 السعر",
+                    name="💰 السعر الأساسي",
                     value=(
-                        f"`{product_data['price']:,}` كريدت"
+                        f"`{price:,}` كريدت"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="🧾 ضريبة ProBot",
+                    value=(
+                        f"`{tax_amount:,}` كريدت"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="💳 المبلغ المطلوب تحويله",
+                    value=(
+                        f"`{transfer_amount:,}` كريدت"
                     ),
                     inline=False
                 )
@@ -1537,6 +1598,15 @@ class ProductsView(
 
                         return
 
+                price = product_data["price"]
+                transfer_amount = calculate_transfer_amount(
+                    price
+                )
+
+                tax_amount = (
+                    transfer_amount - price
+                )
+
                 embed = discord.Embed(
                     title="🛒 تأكيد الطلب",
                     description=(
@@ -1552,9 +1622,25 @@ class ProductsView(
                 )
 
                 embed.add_field(
-                    name="💰 السعر",
+                    name="💰 السعر الأساسي",
                     value=(
-                        f"`{product_data['price']:,}` كريدت"
+                        f"`{price:,}` كريدت"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="🧾 ضريبة ProBot",
+                    value=(
+                        f"`{tax_amount:,}` كريدت"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="💳 المبلغ المطلوب تحويله",
+                    value=(
+                        f"`{transfer_amount:,}` كريدت"
                     ),
                     inline=False
                 )
@@ -1686,6 +1772,14 @@ class ConfirmView(
 
         price = product["price"]
 
+        transfer_amount = calculate_transfer_amount(
+            price
+        )
+
+        tax_amount = (
+            transfer_amount - price
+        )
+
         # -------------------------------------------------
         # منع بدء شراء يوزر إذا الستوك فاضي
         # -------------------------------------------------
@@ -1717,8 +1811,17 @@ class ConfirmView(
             embed=discord.Embed(
                 title="💳 تجهيز الدفع",
                 description=(
-                    f"📦 المنتج: **{product['name']}**\n"
-                    f"💰 المبلغ: `{price:,}` كريدت\n\n"
+                    f"📦 المنتج: **{product['name']}**\n\n"
+
+                    f"💰 السعر الأساسي: "
+                    f"`{price:,}` كريدت\n"
+
+                    f"🧾 ضريبة ProBot: "
+                    f"`{tax_amount:,}` كريدت\n\n"
+
+                    f"💳 المبلغ المطلوب: "
+                    f"`{transfer_amount:,}` كريدت\n\n"
+
                     "سيتم إرسال تعليمات التحويل الآن."
                 ),
                 color=0xF1C40F
@@ -1857,7 +1960,9 @@ class ConfirmView(
                         description=(
                             f"{interaction.user.mention}\n\n"
                             f"📦 المنتج: **{product['name']}**\n"
-                            f"💰 المبلغ: `{price:,}` كريدت\n\n"
+                            f"💰 السعر الأساسي: `{price:,}` كريدت\n"
+                            f"🧾 الضريبة: `{tax_amount:,}` كريدت\n"
+                            f"💳 المدفوع: `{transfer_amount:,}` كريدت\n\n"
                             "📩 تم إرسال اليوزر إلى الخاص."
                         ),
                         color=0x2ECC71
@@ -1876,7 +1981,9 @@ class ConfirmView(
                         f"🆔 ID: `{interaction.user.id}`\n"
                         f"📦 النوع: **{product['name']}**\n"
                         f"🔤 اليوزر: `{username}`\n"
-                        f"💰 السعر: `{price:,}`"
+                        f"💰 السعر الأساسي: `{price:,}`\n"
+                        f"🧾 الضريبة: `{tax_amount:,}`\n"
+                        f"💳 المدفوع: `{transfer_amount:,}`"
                     )
 
                 except discord.HTTPException:
@@ -1921,7 +2028,9 @@ class ConfirmView(
                     description=(
                         f"{interaction.user.mention}\n\n"
                         f"📦 الطلب: **{product['name']}**\n"
-                        f"💰 السعر: `{price:,}` كريدت\n\n"
+                        f"💰 السعر الأساسي: `{price:,}` كريدت\n"
+                        f"🧾 الضريبة: `{tax_amount:,}` كريدت\n"
+                        f"💳 المدفوع: `{transfer_amount:,}` كريدت\n\n"
                         f"📸 الرجاء التواصل مع "
                         f"<@{OWNER_ID}>\n"
                         "وإرسال **صورة دليل الشراء** "
@@ -1942,7 +2051,9 @@ class ConfirmView(
                     f"👤 العميل: {interaction.user}\n"
                     f"🆔 ID: `{interaction.user.id}`\n"
                     f"📦 المنتج: **{product['name']}**\n"
-                    f"💰 السعر: `{price:,}`"
+                    f"💰 السعر الأساسي: `{price:,}`\n"
+                    f"🧾 الضريبة: `{tax_amount:,}`\n"
+                    f"💳 المدفوع: `{transfer_amount:,}`"
                 )
 
             except discord.HTTPException:
@@ -1985,7 +2096,9 @@ class ConfirmView(
                 description=(
                     f"{interaction.user.mention}\n\n"
                     f"📦 المنتج: **{product['name']}**\n"
-                    f"💰 السعر: `{price:,}` كريدت\n\n"
+                    f"💰 السعر الأساسي: `{price:,}` كريدت\n"
+                    f"🧾 الضريبة: `{tax_amount:,}` كريدت\n"
+                    f"💳 المدفوع: `{transfer_amount:,}` كريدت\n\n"
                     f"📸 الرجاء التواصل مع "
                     f"<@{OWNER_ID}>\n"
                     "وإرسال **صورة دليل الشراء** "
@@ -2006,7 +2119,9 @@ class ConfirmView(
                 f"👤 العميل: {interaction.user}\n"
                 f"🆔 ID: `{interaction.user.id}`\n"
                 f"📦 المنتج: **{product['name']}**\n"
-                f"💰 السعر: `{price:,}`"
+                f"💰 السعر الأساسي: `{price:,}`\n"
+                f"🧾 الضريبة: `{tax_amount:,}`\n"
+                f"💳 المدفوع: `{transfer_amount:,}`"
             )
 
         except discord.HTTPException:
@@ -2247,6 +2362,10 @@ async def on_ready():
 
     print(
         "⏱️ مهلة الدفع: 15 دقيقة"
+    )
+
+    print(
+        "🧾 ضريبة ProBot: 5%"
     )
 
     print(
